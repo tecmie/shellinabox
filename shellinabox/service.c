@@ -121,18 +121,29 @@ void initService(struct Service *service, const char *arg) {
     service->group                          = NULL;
     check(service->cwd                      = strdup("/"));
     char *host;
+    char *sshPort;
     check(host                              = strdup("localhost"));
+    check(sshPort                           = strdup("22"));
+
     if ((ptr                                = strchr(arg, ':')) != NULL) {
-      check(ptr                             = strdup(ptr + 1));
-      char *end;
-      if ((end                              = strchr(ptr, ':')) != NULL) {
-        *end                                = '\000';
-      }
+      ptr                                   = ptr + 1;
       if (*ptr) {
-        free(host);
-        host                                = ptr;
-      } else {
-        free(ptr);
+        char *tmp                           = strchr(ptr, ':');
+        if (tmp == NULL) {
+          // If the second ":" is not found, keep as host whatever is after first ":".
+          free(host);
+          check(host                        = strdup(ptr));
+        } else {
+          // If we find a second ":", keep as a host whatever is in between first ":"
+          // and second ":" and as sshPort whatever is after second ":".
+          int size                          = (tmp - ptr + 1);
+          free(host);
+          free(sshPort);
+          check(host                        = malloc(size));
+          memset(host, 0, size);
+          memcpy(host, ptr, size - 1);
+          check(sshPort                     = strdup(tmp + 1));
+        }
       }
     }
 
@@ -145,6 +156,15 @@ void initService(struct Service *service, const char *arg) {
             (ch >= 'a' && ch <= 'z') ||
             ch == '-' || ch == '.')) {
         fatal("[config] Invalid hostname \"%s\" in service definition!", host);
+      }
+    }
+
+    // Don't allow manipulation of the SSH command line through "creative" use
+    // of the port.
+    for (char *h = sshPort; *h; h++) {
+      char ch                               = *h;
+      if (!(ch >= '0' && ch <= '9')) {
+        fatal("[config] Invalid port \"%s\" in service definition!", sshPort);
       }
     }
 
@@ -162,8 +182,9 @@ void initService(struct Service *service, const char *arg) {
 //          feature, we cannot be sure that it is available on the
 //          target server.  Removing it for the sake of Centos.
 //          "-oVisualHostKey=no"
-          " -oLogLevel=FATAL %%s@%s", host);
+          " -oLogLevel=FATAL -p%s %%s@%s",sshPort,  host);
     free(host);
+    free(sshPort);
   } else {
     service->useLogin                       = 0;
 
